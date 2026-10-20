@@ -1,5 +1,7 @@
 # FDR11.Notifications.Email
 
+![FDR11.Notifications.Email — invio email multiprovider](https://raw.githubusercontent.com/della11/FDR11.Notifications.Email/main/Code/assets/fdr11-notifications-email-icon.png)
+
 Libreria C# per l'invio di email tramite SMTP (MailKit), SendGrid, Amazon SES e Azure Communication Services. Espone il contratto `IEmailSender`, modelli condivisi e un'estensione per la Dependency Injection.
 
 Il progetto usa .NET 10 (`net10.0`). Le astrazioni e le implementazioni dei provider sono contenute nello stesso assembly.
@@ -12,7 +14,7 @@ Se il pacchetto è disponibile nel feed NuGet configurato:
 dotnet add package FDR11.Notifications.Email
 ```
 
-In alternativa, aggiungere un riferimento al progetto `src/FDR11.Notifications.Email/FDR11.Notifications.Email.csproj`. La presenza del progetto non implica che il pacchetto sia pubblicato su nuget.org.
+In alternativa, aggiungere un riferimento al progetto `Code/FDR11.Notifications.Email.csproj`. La presenza del progetto non implica che il pacchetto sia pubblicato su nuget.org.
 
 ## Configurazione e registrazione
 
@@ -212,7 +214,7 @@ Riferimenti: [metriche .NET](https://learn.microsoft.com/en-us/dotnet/core/diagn
 
 ```text
 FDR11.Notifications.Email.slnx
-src/FDR11.Notifications.Email/
+Code/
   Abstracts/IEmailSender.cs
   Concretes/
     SmtpEmailSender.cs
@@ -229,7 +231,7 @@ src/FDR11.Notifications.Email/
     EmailOptionsValidator.cs
     EmailRetryOptions.cs
   Resilience/EmailRetry.cs
-tests/FDR11.Notifications.Email.Tests/
+Tests/
   ProviderCompatibilityTests.cs
   ConsolidationTests.cs
   DiagnosticsTests.cs
@@ -247,13 +249,13 @@ Eseguire dalla radice del repository con l'SDK .NET 10:
 
 ```shell
 dotnet build FDR11.Notifications.Email.slnx
-dotnet test tests/FDR11.Notifications.Email.Tests/FDR11.Notifications.Email.Tests.csproj
-dotnet pack src/FDR11.Notifications.Email/FDR11.Notifications.Email.csproj --configuration Release --output artifacts
+dotnet test Tests/FDR11.Notifications.Email.Tests.csproj
+dotnet pack Code/FDR11.Notifications.Email.csproj --configuration Release --output artifacts
 ```
 
 I test verificano selezione DI e validazione delle opzioni, mapping dei messaggi e allegati, cancellazione anticipata su tutti i provider, inoltro del token e gestione delle risposte SendGrid. Verificano inoltre log, correlazione, metriche, cancellazioni, errori, concorrenza e assenza di dati sensibili nella telemetria. Usano serializzazione MIME, client simulati e un handler HTTP in memoria: non inviano email reali e non verificano credenziali o consegna sui servizi remoti.
 
-Il progetto non dichiara un `PackageId` personalizzato: il nome del pacchetto deriva da `FDR11.Notifications.Email`. La pubblicazione richiede un feed e credenziali configurati separatamente.
+Il progetto dichiara `PackageId=FDR11.Notifications.Email`, include README e licenza, genera documentazione XML, PDB portabili e un pacchetto simboli `.snupkg`. SourceLink collega i sorgenti al repository GitHub. `CI=true` abilita `ContinuousIntegrationBuild`; i workflow passano la stessa `Version` a build e pack. Per configurazione dei feed, approvazione e versionamento vedere [RELEASING.md](https://github.com/della11/FDR11.Notifications.Email/blob/main/RELEASING.md).
 
 ## Roadmap di integrazione proposta
 

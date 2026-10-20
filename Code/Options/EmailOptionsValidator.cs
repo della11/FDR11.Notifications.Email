@@ -5,6 +5,7 @@ namespace FDR11.Notifications.Email.Options;
 /// <summary>Valida esclusivamente le impostazioni del provider selezionato.</summary>
 public sealed class EmailOptionsValidator : IValidateOptions<EmailOptions>
 {
+    /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, EmailOptions options)
     {
         var errors = new List<string>();

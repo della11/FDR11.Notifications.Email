@@ -5,6 +5,7 @@ namespace FDR11.Notifications.Email.Options;
 /// </summary>
 public  class EmailOptions
 {
+    /// <summary>Impostazioni dei retry applicativi.</summary>
     public EmailRetryOptions Retry { get; set; } = new();
     /// <summary>
     /// Nome della sezione di configurazione delle opzioni di posta elettronica.

@@ -1,0 +1,232 @@
+name: Publish NuGet package
+
+run-name: >-
+  NuGet ${{ inputs.prerelease && 'prerelease' || 'stable' }} requested by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: "Pubblicare una prerelease preview.N?"
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: nuget-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+  packages: write
+
+jobs:
+  prepare:
+    name: Build, test and pack
+    runs-on: ubuntu-latest
+    outputs:
+      package-version: ${{ steps.version.outputs.package-version }}
+      release-tag: ${{ steps.version.outputs.release-tag }}
+      source-commit: ${{ steps.version.outputs.source-commit }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+
+    steps:
+      - name: Require main branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Avviare il rilascio dal branch main. Branch selezionato: $GITHUB_REF_NAME"
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Determine next version
+        id: version
+        shell: bash
+        env:
+          IS_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          LATEST_STABLE="$(
+            git tag --list |
+              { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } |
+              sort -V |
+              tail -n 1
+          )"
+
+          if [[ -z "$LATEST_STABLE" ]]; then
+            NEXT_STABLE="$(dotnet msbuild Code/FDR11.Notifications.Email.csproj -getProperty:Version -nologo)"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST_STABLE#v}"
+            NEXT_STABLE="${MAJOR}.${MINOR}.$((10#$PATCH + 1))"
+          fi
+
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            LAST_PREVIEW=0
+            while IFS= read -r TAG; do
+              NUMBER="${TAG##*.}"
+              if [[ "$NUMBER" =~ ^[0-9]+$ ]] && (( NUMBER > LAST_PREVIEW )); then
+                LAST_PREVIEW="$NUMBER"
+              fi
+            done < <(git tag --list "v${NEXT_STABLE}-preview.*")
+
+            VERSION="${NEXT_STABLE}-preview.$((LAST_PREVIEW + 1))"
+          else
+            VERSION="$NEXT_STABLE"
+          fi
+
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$ ]]
+          else
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          fi
+
+          RELEASE_TAG="v${VERSION}"
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Il tag $RELEASE_TAG esiste già."
+            exit 1
+          fi
+
+          SOURCE_COMMIT="$(git rev-parse HEAD)"
+          echo "Versione calcolata: $VERSION"
+          echo "package-version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release-tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "source-commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "PACKAGE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
+
+      - name: Restore
+        run: >
+          dotnet restore FDR11.Notifications.Email.slnx
+          --source https://api.nuget.org/v3/index.json
+
+      - name: Build
+        run: >
+          dotnet build FDR11.Notifications.Email.slnx
+          --configuration Release
+          --no-restore
+          -p:Version=${{ env.PACKAGE_VERSION }}
+          -p:CI=true
+
+      - name: Test
+        run: >
+          dotnet test FDR11.Notifications.Email.slnx
+          --configuration Release
+          --no-build
+          --no-restore
+
+      - name: Pack nupkg and snupkg
+        run: >
+          dotnet pack Code/FDR11.Notifications.Email.csproj
+          --configuration Release
+          --no-build
+          --output artifacts
+          -p:Version=${{ env.PACKAGE_VERSION }}
+          -p:RepositoryUrl=${{ github.server_url }}/${{ github.repository }}
+          -p:RepositoryCommit=${{ env.SOURCE_COMMIT }}
+          -p:CI=true
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FDR11.Notifications.Email-${{ env.PACKAGE_VERSION }}
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+          if-no-files-found: error
+
+  publish:
+    name: Approve and publish
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment:
+      name: nuget-release
+    env:
+      PACKAGE_VERSION: ${{ needs.prepare.outputs.package-version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release-tag }}
+      SOURCE_COMMIT: ${{ needs.prepare.outputs.source-commit }}
+      IS_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+
+    steps:
+      - name: Download workflow artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: FDR11.Notifications.Email-${{ env.PACKAGE_VERSION }}
+          path: artifacts
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish to GitHub Packages
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          dotnet nuget push
+          "artifacts/FDR11.Notifications.Email.${{ env.PACKAGE_VERSION }}.nupkg"
+          --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          --api-key "$NUGET_AUTH_TOKEN"
+          --no-symbols
+          --skip-duplicate
+
+      - name: Authenticate to NuGet.org
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Publish package to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: >
+          dotnet nuget push
+          "artifacts/FDR11.Notifications.Email.${{ env.PACKAGE_VERSION }}.nupkg"
+          --source "https://api.nuget.org/v3/index.json"
+          --api-key "$NUGET_API_KEY"
+          --no-symbols
+          --skip-duplicate
+
+      - name: Publish symbols to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: >
+          dotnet nuget push
+          "artifacts/FDR11.Notifications.Email.${{ env.PACKAGE_VERSION }}.snupkg"
+          --source "https://api.nuget.org/v3/index.json"
+          --api-key "$NUGET_API_KEY"
+          --skip-duplicate
+
+      - name: Create GitHub tag and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              artifacts/*.nupkg artifacts/*.snupkg --clobber
+            exit 0
+          fi
+
+          ARGS=(
+            --target "$SOURCE_COMMIT"
+            --generate-notes
+            --title "FDR11.Notifications.Email $PACKAGE_VERSION"
+          )
+
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            ARGS+=(--prerelease)
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            artifacts/*.nupkg artifacts/*.snupkg \
+            "${ARGS[@]}"

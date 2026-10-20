@@ -7,6 +7,7 @@ namespace FDR11.Notifications.Email.Diagnostics;
 /// <summary>Nomi delle sorgenti da abilitare nel collector di tracing e metriche.</summary>
 public static class EmailDiagnostics
 {
+    /// <summary>Nome condiviso del Meter e della sorgente di tracing.</summary>
     public const string SourceName = "FDR11.Notifications.Email";
     internal static readonly ActivitySource Activities = new(SourceName);
     private static readonly Meter Meter = new(SourceName);
