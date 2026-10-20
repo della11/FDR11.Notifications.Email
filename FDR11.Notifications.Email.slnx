@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FDR11.Notifications.Email/FDR11.Notifications.Email.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FDR11.Notifications.Email.Tests/FDR11.Notifications.Email.Tests.csproj" />
+  </Folder>
+</Solution>
